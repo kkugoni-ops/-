@@ -57,7 +57,7 @@ async def on_message(message):
         )
         return
 
-    # 다른 command 명령어들도 정상 작동하도록 처리 (주석 # 추가)
+    # 다른 command 명령어들도 정상 작동하도록 처리 (주석 # 추가) 
     await bot.process_commands(message)
 
 
