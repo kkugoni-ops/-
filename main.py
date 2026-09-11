@@ -1,86 +1,28 @@
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-
-# Render 무료 플랜 포트 감지용 가짜 서버
-def run_dummy_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), lambda *args: BaseHTTPRequestHandler(*args))
-    server.serve_forever()
-
-threading.Thread(target=run_dummy_server, daemon=True).start()
-
-
-
-import os
-import discord
-from discord.ext import commands
-
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-@bot.event
-async def on_ready():
-    print(f"로그인 완료: {bot.user}")
-
-
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
-
-    # 공백을 제거한 텍스트로 비교
-    content = message.content.replace(" ", "")
-
-    if content == "!단미":
-        await message.channel.send("한번만 더 건들이면 내가 누군지 똑똑히 알려주겠어")
-        return
-
-    elif content == "!채채":
-        await message.channel.send('" 채채는 똑똑이야 "')
-        return
-
-    elif content == "!유솔":
-        await message.channel.send("없어졌다 나타났다 다시 없어질게요 아니 다시 나타날게요")
-        return
-
-    elif content == "!이루":
-        await message.channel.send(
-            "“ 이루 라는 귀족의 이름을 입에 올렸으니 <@1236893502491856946> 에게 1천원 입급 부탁드립나다 ”"
-        )
-        return
-
-    elif content == "!명온":
-        await message.channel.send("며농님,, 오늘도,, 아주 고우심니다,,")
-        return
-
-    elif content == "!걸틱":
-        await message.channel.send("왜요?")
-        return
-
-    elif content == "!이븐":
-        await message.channel.send("전 포도주스로 따지면 고농축 엑기스같은 존재죠")
-        return
-
-    elif content == "!이스터에그":
-        await message.channel.send(
-            "쓸대없는 tmi지만 이 봇은 두 번째 희망 봇 이에요. 전에 시도하다가 망했거든요 ㅎ "
-        )
-        return
-
-    import asyncio
+import asyncio
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import threading
 import discord
 from discord import app_commands
 from discord.ext import commands
 from rank_card import create_rank_card
 
 # --------------------------------------------------
-# 1. 봇 기본 설정
+# 1. Render 무료 플랜 포트 감지용 가짜 서버
+# --------------------------------------------------
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(
+        ("0.0.0.0", port), lambda *args: BaseHTTPRequestHandler(*args)
+    )
+    server.serve_forever()
+
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# --------------------------------------------------
+# 2. 봇 기본 설정
 # --------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
@@ -93,7 +35,7 @@ cooldowns = {}
 
 
 # --------------------------------------------------
-# 2. 데이터 관리 및 경험치 공식 함수
+# 3. 데이터 관리 및 경험치 공식 함수
 # --------------------------------------------------
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -109,7 +51,7 @@ def save_data(data):
 
 # 레벨별 필요 XP 계산 공식 (레벨^2 * 100)
 def get_required_xp(level):
-    return (level ** 2) * 100
+    return (level**2) * 100
 
 
 # 특정 레벨까지의 누적 총 필요 XP 계산
@@ -149,7 +91,7 @@ def add_xp(user_id, amount):
 
 
 # --------------------------------------------------
-# 3. 봇 시작 이벤트
+# 4. 봇 시작 이벤트
 # --------------------------------------------------
 @bot.event
 async def on_ready():
@@ -164,7 +106,7 @@ async def on_ready():
 
 
 # --------------------------------------------------
-# 4. 슬래시 명령어 (/제외채널)
+# 5. 슬래시 명령어 (/제외채널)
 # --------------------------------------------------
 @bot.tree.command(
     name="제외채널",
@@ -198,29 +140,54 @@ async def exclude_channel(
 
 
 # --------------------------------------------------
-# 5. 채팅 경험치 이벤트 (채팅 2번당 10 XP -> 1번당 5 XP)
+# 6. 채팅 이벤트 (일반 명령어 + 경험치 적립)
 # --------------------------------------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    data = load_data()
-    blacklisted_channels = data.get("blacklisted_channels", [])
+    # 공백 제거 텍스트로 커스텀 명령어 처리
+    clean_content = message.content.replace(" ", "")
 
-    # 제외 채널이 아닌 경우
-    if message.channel.id not in blacklisted_channels:
-        user_id = message.author.id
-        now = asyncio.get_event_loop().time()
+    if clean_content == "!단미":
+        await message.channel.send(
+            "한번만 더 건들이면 내가 누군지 똑똑히 알려주겠어"
+        )
+        return
+    elif clean_content == "!채채":
+        await message.channel.send('" 채채는 똑똑이야 "')
+        return
+    elif clean_content == "!유솔":
+        await message.channel.send(
+            "없어졌다 나타났다 다시 없어질게요 아니 다시 나타날게요"
+        )
+        return
+    elif clean_content == "!이루":
+        await message.channel.send(
+            "“ 이루 라는 귀족의 이름을 입에 올렸으니 <@1236893502491856946> 에게 1천원 입급 부탁드립나다 ”"
+        )
+        return
+    elif clean_content == "!명온":
+        await message.channel.send("며농님,, 오늘도,, 아주 고우심니다,,")
+        return
+    elif clean_content == "!걸틱":
+        await message.channel.send("왜요?")
+        return
+    elif clean_content == "!이븐":
+        await message.channel.send(
+            "전 포도주스로 따지면 고농축 엑기스같은 존재죠"
+        )
+        return
+    elif clean_content == "!이스터에그":
+        await message.channel.send(
+            "쓸대없는 tmi지만 이 봇은 두 번째 희망 봇 이에요. 전에 시도하다가 망했거든요 ㅎ "
+        )
+        return
 
-        # 1분 쿨다운 체크 후 채팅 1회당 5 XP 지급 (2회 = 10 XP)
-        if user_id not in cooldowns or now - cooldowns[user_id] > 60:
-            cooldowns[user_id] = now
-            add_xp(user_id, 5)
-
-    # !랭크 명령어 처리
-    content = message.content
-    if content == "!랭크" or content == "!rank":
+    # 랭크 카드 출력 명령어
+    if message.content == "!랭크" or message.content == "!rank":
+        data = load_data()
         users_data = data.get("users", {})
         user_info = users_data.get(
             str(message.author.id), {"xp": 0, "level": 1}
@@ -229,7 +196,6 @@ async def on_message(message):
         xp = user_info["xp"]
         max_xp = get_required_xp(lvl)
 
-        # 스타일 1: 전체 누적 총 XP 계산
         total_xp = get_total_xp_for_level(lvl) + xp
 
         img_buffer = await create_rank_card(
@@ -245,16 +211,28 @@ async def on_message(message):
         )
         return
 
+    # 제외 채널 체크 및 채팅 경험치 지급 (1분 쿨다운, 1회당 5 XP)
+    data = load_data()
+    blacklisted_channels = data.get("blacklisted_channels", [])
+
+    if message.channel.id not in blacklisted_channels:
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+
+        if user_id not in cooldowns or now - cooldowns[user_id] > 60:
+            cooldowns[user_id] = now
+            add_xp(user_id, 5)
+
     await bot.process_commands(message)
 
 
 # --------------------------------------------------
-# 6. 음성 통화 경험치 루프 (1시간당 30 XP -> 2분당 1 XP)
+# 7. 음성 통화 경험치 루프 (2분당 1 XP = 1시간당 30 XP)
 # --------------------------------------------------
 async def voice_xp_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
-        await asyncio.sleep(120)  # 2분마다 체크
+        await asyncio.sleep(120)
 
         data = load_data()
         blacklisted_channels = data.get("blacklisted_channels", [])
@@ -264,12 +242,8 @@ async def voice_xp_loop():
                 if vc.id not in blacklisted_channels:
                     for member in vc.members:
                         if not member.bot:
-                            add_xp(member.id, 1)  # 2분당 1 XP 지급 (1시간 = 30 XP)
-
-    # 다른 command 명령어들도 정상 작동하도록 처리 (주석 # 추가) 
-    await bot.process_commands(message)
+                            add_xp(member.id, 1)
 
 
-
-# Render에 등록할 환경 변수에서 토큰을 안전하게 불러옵니다
+# Render 환경 변수의 BOT_TOKEN으로 실행
 bot.run(os.environ["BOT_TOKEN"])
