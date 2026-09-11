@@ -60,6 +60,8 @@ intents.message_content = True
 # 음성 채널 확인
 intents.voice_states = True
 
+intents.members = True
+
 
 bot = commands.Bot(
     command_prefix="!",
@@ -1234,6 +1236,27 @@ async def voice_xp_loop():
                         50
                     )
 
+
+# ==================================================
+# 서버에서 나간 유저 데이터 삭제
+# ==================================================
+
+@bot.event
+async def on_member_remove(member):
+
+    data = load_data()
+
+    user_id = str(member.id)
+
+    if user_id in data["users"]:
+
+        del data["users"][user_id]
+
+        save_data(data)
+
+        print(
+            f"[유저 데이터 삭제] {member} ({member.id})"
+        )
 
 # ==================================================
 # 22. 봇 실행
