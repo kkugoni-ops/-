@@ -9,7 +9,7 @@ from discord.ext import commands
 from rank_card import create_rank_card
 
 # --------------------------------------------------
-# 1. Render 무료 플랜 포트 감지용 가짜 서버
+# 1. Render 웹 서비스 포트 감지용 서버
 # --------------------------------------------------
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -35,12 +35,15 @@ cooldowns = {}
 
 
 # --------------------------------------------------
-# 3. 데이터 관리 및 경험치 공식 함수
+# 3. 데이터 및 레벨 계산 함수
 # --------------------------------------------------
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return {"users": {}, "blacklisted_channels": []}
 
 
@@ -49,12 +52,10 @@ def save_data(data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 
-# 레벨별 필요 XP 계산 공식 (레벨^2 * 100)
 def get_required_xp(level):
     return (level**2) * 100
 
 
-# 특정 레벨까지의 누적 총 필요 XP 계산
 def get_total_xp_for_level(level):
     total = 0
     for lvl in range(1, level):
@@ -78,7 +79,6 @@ def add_xp(user_id, amount):
     current_lvl = data["users"][user_str]["level"]
     required_xp = get_required_xp(current_lvl)
 
-    # 레벨업 체크
     while current_xp >= required_xp:
         current_xp -= required_xp
         current_lvl += 1
@@ -95,12 +95,12 @@ def add_xp(user_id, amount):
 # --------------------------------------------------
 @bot.event
 async def on_ready():
-    print(f"로그인 성공: {bot.user.name}")
+    print(f"로그인 성공: {bot.user.name} (ID: {bot.user.id})")
     try:
         synced = await bot.tree.sync()
         print(f"슬래시 명령어 {len(synced)}개 동기화 완료")
     except Exception as e:
-        print(f"동기화 에러: {e}")
+        print(f"슬래시 명령어 동기화 실패: {e}")
 
     bot.loop.create_task(voice_xp_loop())
 
@@ -126,7 +126,7 @@ async def exclude_channel(
         data["blacklisted_channels"] = blacklisted
         save_data(data)
         await interaction.response.send_message(
-            f"✅ {channel.mention} 채널이 제외 목록에서 삭제되었습니다. (경험치 획득 가능)",
+            f"✅ {channel.mention} 채널이 제외 목록에서 삭제되었습니다.",
             ephemeral=True,
         )
     else:
@@ -134,20 +134,26 @@ async def exclude_channel(
         data["blacklisted_channels"] = blacklisted
         save_data(data)
         await interaction.response.send_message(
-            f"🚫 {channel.mention} 채널이 제외 목록에 추가되었습니다. (경험치 획득 불가)",
+            f"🚫 {channel.mention} 채널이 제외 목록에 추가되었습니다.",
             ephemeral=True,
         )
 
 
 # --------------------------------------------------
-# 6. 채팅 이벤트 (일반 명령어 + 경험치 적립)
+# 6. 채팅 이벤트 (커스텀 명령어 + 랭크 카드 + 경험치)
 # --------------------------------------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # 공백 제거 텍스트로 커스텀 명령어 처리
+    # 제외 채널 감지
+    data = load_data()
+    blacklisted_channels = data.get("blacklisted_channels", [])
+    if message.channel.id in blacklisted_channels:
+        return
+
+    # 1) 커스텀 응답 처리
     clean_content = message.content.replace(" ", "")
 
     if clean_content == "!단미":
@@ -179,31 +185,15 @@ async def on_message(message):
         )
         return
 
-    # 제외 채널 검사
-    data = load_data()
-    blacklisted_channels = data.get("blacklisted_channels", [])
-
-    if message.channel.id in blacklisted_channels:
-        return  # 제외 채널이면 경험치 적립 및 랭크 카드 생성 모두 차단
-
-    # 채팅 경험치 적립 (1분 쿨다운, 1회당 5 XP)
-    user_id = message.author.id
-    now = asyncio.get_event_loop().time()
-
-    if user_id not in cooldowns or now - cooldowns[user_id] > 60:
-        cooldowns[user_id] = now
-        add_xp(user_id, 5)
-
-    # !랭크 카드 감지 (대소문자/공백 유연하게 처리)
+    # 2) !랭크 명령어 처리
     cmd_text = message.content.strip().lower().replace(" ", "")
     if cmd_text in ["!랭크", "!rank"]:
-        print(f"[{message.author.name}] 랭크 카드 생성 시작...")
+        print(f"[{message.author.name}] 랭크 카드 요청 감지됨")
         users_data = data.get("users", {})
         user_info = users_data.get(str(message.author.id), {"xp": 0, "level": 1})
-        lvl = user_info["level"]
-        xp = user_info["xp"]
+        lvl = user_info.get("level", 1)
+        xp = user_info.get("xp", 0)
         max_xp = get_required_xp(lvl)
-
         total_xp = get_total_xp_for_level(lvl) + xp
 
         try:
@@ -220,14 +210,23 @@ async def on_message(message):
             )
             print(f"[{message.author.name}] 랭크 카드 전송 성공!")
         except Exception as e:
-            print(f"랭크 카드 생성/전송 중 오류 발생: {e}")
+            print(f"[오류 발생] 랭크 카드 생성 실패: {e}")
+            await message.channel.send("❌ 랭크 카드를 생성하는 중 오류가 발생했습니다.")
         return
+
+    # 3) 일반 채팅 경험치 지급 (1분 쿨다운)
+    user_id = message.author.id
+    now = asyncio.get_event_loop().time()
+
+    if user_id not in cooldowns or now - cooldowns[user_id] > 60:
+        cooldowns[user_id] = now
+        add_xp(user_id, 5)
 
     await bot.process_commands(message)
 
 
 # --------------------------------------------------
-# 7. 음성 통화 경험치 루프 (2분당 1 XP = 1시간당 30 XP)
+# 7. 음성 채널 경험치 스케줄러 (2분당 1 XP)
 # --------------------------------------------------
 async def voice_xp_loop():
     await bot.wait_until_ready()
@@ -245,5 +244,9 @@ async def voice_xp_loop():
                             add_xp(member.id, 1)
 
 
-# Render 환경 변수의 BOT_TOKEN으로 실행
-bot.run(os.environ["BOT_TOKEN"])
+# 봇 실행
+token = os.environ.get("BOT_TOKEN")
+if not token:
+    raise ValueError("BOT_TOKEN 환경 변수가 설정되어 있지 않습니다.")
+
+bot.run(token)
