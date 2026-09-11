@@ -1,68 +1,187 @@
-import io
-import aiohttp
-from easy_pil import Editor, Canvas, Font, load_image
+from easy_pil import Editor, Canvas, Font, load_image_async
 
 
 async def create_rank_card(
-    username, avatar_url, level=1, current_xp=50, max_xp=100, total_xp=50
+    username,
+    avatar_url,
+    chat_level=1,
+    chat_xp=0,
+    chat_max_xp=100,
+    chat_total_xp=0,
+    voice_level=1,
+    voice_xp=0,
+    voice_max_xp=100,
+    voice_total_xp=0,
+    chat_rank=None,
+    voice_rank=None,
+    total_rank=None,
 ):
-    # 1. 배경 Canvas 생성 (500x150)
-    background = Canvas((500, 150), color="#23272A")
+    # --------------------------------------------------
+    # 1. 배경
+    # --------------------------------------------------
+    background = Canvas((700, 300), color="#23272A")
     editor = Editor(background)
 
-    # 2. 유저 아바타 이미지 비동기 다운로드
+    # --------------------------------------------------
+    # 2. 프로필 이미지
+    # --------------------------------------------------
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(str(avatar_url)) as response:
-                if response.status == 200:
-                    avatar_data = await response.read()
-                    profile_image = load_image(io.BytesIO(avatar_data))
-                else:
-                    profile_image = Canvas((100, 100), color="#7289DA")
+        profile_image = await load_image_async(str(avatar_url))
+        profile = (
+            Editor(profile_image)
+            .resize((110, 110))
+            .circle_image()
+        )
+        editor.paste(profile, (30, 30))
+
     except Exception as e:
-        print(f"[아바타 로드 실패] 기본 이미지로 대체합니다: {e}")
-        profile_image = Canvas((100, 100), color="#7289DA")
+        print(f"[프로필 이미지 로드 실패] 기본 이미지 사용: {e}")
 
-    # 3. 아바타 원형 자르기 및 배치
-    profile = Editor(profile_image).resize((100, 100)).circle_image()
-    editor.paste(profile, (25, 25))
-
-    # 4. 폰트 설정 (서버 환경에 상관없이 100% 동작하는 안전한 기본 폰트 사용)
-    try:
-        font_large = Font.pica(size=22, bold=True)
-        font_small = Font.pica(size=13)
-    except Exception:
-        font_large = None
-        font_small = None
-
-    # 5. 텍스트 표시
-    editor.text((140, 28), str(username), font=font_large, color="#FFFFFF")
-    editor.text(
-        (140, 60),
-        f"Level {level}  |  {current_xp} / {max_xp} XP  (Total: {total_xp} XP)",
-        font=font_small,
-        color="#AAAAAA",
-    )
-
-    # 6. 프로그래스 바 그리기
-    editor.rectangle((140, 95), width=330, height=15, fill="#484B4E", radius=10)
-
-    display_xp = min(current_xp, max_xp)
-    if max_xp > 0 and display_xp > 0:
-        editor.bar(
-            (140, 95),
-            max_value=max_xp,
-            current_value=display_xp,
-            width=330,
-            height=15,
-            fill="#5865F2",
-            radius=10,
+        default_image = Canvas(
+            (110, 110),
+            color="#5865F2"
         )
 
-    # 7. 이미지 버퍼 생성 및 반환
-    file_bytes = editor.to_bytes()
-    buffer = io.BytesIO(file_bytes)
+        profile = Editor(default_image).circle_image()
+        editor.paste(profile, (30, 30))
+
+    # --------------------------------------------------
+    # 3. 폰트
+    # --------------------------------------------------
+    try:
+        font_name = Font.pica(size=24, bold=True)
+        font_main = Font.pica(size=16)
+        font_small = Font.pica(size=13)
+    except Exception:
+        font_name = None
+        font_main = None
+        font_small = None
+
+    # --------------------------------------------------
+    # 4. 이름
+    # --------------------------------------------------
+    editor.text(
+        (165, 30),
+        str(username),
+        font=font_name,
+        color="#FFFFFF"
+    )
+
+    # --------------------------------------------------
+    # 5. 채팅 정보
+    # --------------------------------------------------
+    editor.text(
+        (165, 75),
+        f"💬 채팅 Lv.{chat_level}",
+        font=font_main,
+        color="#FFFFFF"
+    )
+
+    editor.text(
+        (165, 105),
+        f"{chat_xp} / {chat_max_xp} XP",
+        font=font_small,
+        color="#AAAAAA"
+    )
+
+    editor.text(
+        (165, 130),
+        f"누적 채팅 XP: {chat_total_xp:,}",
+        font=font_small,
+        color="#AAAAAA"
+    )
+
+    # 채팅 XP 바
+    editor.rectangle(
+        (165, 155),
+        width=480,
+        height=14,
+        fill="#484B4E",
+        radius=7
+    )
+
+    chat_display_xp = min(chat_xp, chat_max_xp)
+
+    if chat_max_xp > 0 and chat_display_xp > 0:
+        editor.bar(
+            (165, 155),
+            max_value=chat_max_xp,
+            current_value=chat_display_xp,
+            width=480,
+            height=14,
+            fill="#5865F2",
+            radius=7
+        )
+
+    # --------------------------------------------------
+    # 6. 음성 정보
+    # --------------------------------------------------
+    editor.text(
+        (165, 190),
+        f"🎧 음성 Lv.{voice_level}",
+        font=font_main,
+        color="#FFFFFF"
+    )
+
+    editor.text(
+        (165, 220),
+        f"{voice_xp} / {voice_max_xp} XP",
+        font=font_small,
+        color="#AAAAAA"
+    )
+
+    editor.text(
+        (165, 245),
+        f"누적 음성 XP: {voice_total_xp:,}",
+        font=font_small,
+        color="#AAAAAA"
+    )
+
+    # --------------------------------------------------
+    # 7. 총합
+    # --------------------------------------------------
+    total_xp = chat_total_xp + voice_total_xp
+
+    editor.text(
+        (500, 30),
+        f"TOTAL {total_xp:,}",
+        font=font_small,
+        color="#FFFFFF"
+    )
+
+    # --------------------------------------------------
+    # 8. 순위
+    # --------------------------------------------------
+    if chat_rank is not None:
+        editor.text(
+            (30, 265),
+            f"채팅 #{chat_rank}",
+            font=font_small,
+            color="#FFFFFF"
+        )
+
+    if voice_rank is not None:
+        editor.text(
+            (180, 265),
+            f"음성 #{voice_rank}",
+            font=font_small,
+            color="#FFFFFF"
+        )
+
+    if total_rank is not None:
+        editor.text(
+            (330, 265),
+            f"종합 #{total_rank}",
+            font=font_small,
+            color="#FFFFFF"
+        )
+
+    # --------------------------------------------------
+    # 9. PNG 반환
+    # --------------------------------------------------
+    file_bytes = editor.to_bytes(fmt="PNG")
+
+    buffer = __import__("io").BytesIO(file_bytes)
     buffer.seek(0)
+
     return buffer
-
-
