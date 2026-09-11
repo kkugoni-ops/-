@@ -8,18 +8,16 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from rank_card import create_rank_card
-
 
 # ==================================================
-# 1. Render 웹 서비스 포트
+# 1. Render 웹 서버
 # ==================================================
 
 class HealthHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Bot is running!")
 
@@ -27,10 +25,13 @@ class HealthHandler(BaseHTTPRequestHandler):
         return
 
 
-def run_dummy_server():
+def run_web_server():
 
     port = int(
-        os.environ.get("PORT", 10000)
+        os.environ.get(
+            "PORT",
+            10000
+        )
     )
 
     server = HTTPServer(
@@ -38,13 +39,11 @@ def run_dummy_server():
         HealthHandler
     )
 
-    print(f"웹 서버 실행: {port}")
-
     server.serve_forever()
 
 
 threading.Thread(
-    target=run_dummy_server,
+    target=run_web_server,
     daemon=True
 ).start()
 
@@ -55,9 +54,12 @@ threading.Thread(
 
 intents = discord.Intents.default()
 
+# !랭크 같은 명령어를 읽기 위해 필요
 intents.message_content = True
+
+# 음성 채널 상태 확인
 intents.voice_states = True
-intents.members = True
+
 
 bot = commands.Bot(
     command_prefix="!",
@@ -67,178 +69,203 @@ bot = commands.Bot(
 
 DATA_FILE = "levels.json"
 
+# 채팅 XP 쿨타임
 chat_cooldowns = {}
 
 
 # ==================================================
-# 3. 데이터
+# 3. 데이터 불러오기
 # ==================================================
 
 def load_data():
 
-    if os.path.exists(DATA_FILE):
+    if not os.path.exists(DATA_FILE):
 
-        try:
+        return {
+            "users": {},
+            "blacklisted_channels": []
+        }
 
-            with open(
-                DATA_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
+    try:
 
-                data = json.load(f)
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
 
-                if not isinstance(data, dict):
-                    raise ValueError("잘못된 JSON 구조")
+            data = json.load(f)
 
-                # --------------------------------------
-                # 기본 구조
-                # --------------------------------------
+    except Exception as e:
 
-                data.setdefault("users", {})
-                data.setdefault(
-                    "blacklisted_channels",
-                    []
-                )
+        print(f"[데이터 로드 오류] {e}")
 
-                # --------------------------------------
-                # 기존 데이터 자동 변환
-                # --------------------------------------
+        return {
+            "users": {},
+            "blacklisted_channels": []
+        }
 
-                for user_id, user in data["users"].items():
 
-                    if not isinstance(user, dict):
-                        data["users"][user_id] = {}
-                        user = data["users"][user_id]
+    data.setdefault(
+        "users",
+        {}
+    )
 
-                    # 예전 xp / level 구조
-                    if "chat_xp" not in user:
+    data.setdefault(
+        "blacklisted_channels",
+        []
+    )
 
-                        old_xp = user.get(
-                            "xp",
-                            0
-                        )
 
-                        old_level = user.get(
-                            "level",
-                            1
-                        )
+    # ----------------------------------------------
+    # 기존 데이터 구조 자동 변환
+    # ----------------------------------------------
 
-                        user["chat_xp"] = old_xp
+    for user_id, user in data["users"].items():
 
-                        user["chat_level"] = old_level
+        # 예전 xp / level 구조
+        if "chat_xp" not in user:
 
-                        user["chat_total_xp"] = (
-                            get_total_xp_for_level(
-                                old_level
-                            )
-                            + old_xp
-                        )
-
-                        user["voice_xp"] = 0
-                        user["voice_level"] = 1
-                        user["voice_total_xp"] = 0
-
-                        user.pop("xp", None)
-                        user.pop("level", None)
-
-                    # ----------------------------------
-                    # 누락 데이터 방지
-                    # ----------------------------------
-
-                    user.setdefault(
-                        "chat_xp",
-                        0
-                    )
-
-                    user.setdefault(
-                        "chat_level",
-                        1
-                    )
-
-                    user.setdefault(
-                        "chat_total_xp",
-                        0
-                    )
-
-                    user.setdefault(
-                        "voice_xp",
-                        0
-                    )
-
-                    user.setdefault(
-                        "voice_level",
-                        1
-                    )
-
-                    user.setdefault(
-                        "voice_total_xp",
-                        0
-                    )
-
-                return data
-
-        except Exception as e:
-
-            print(
-                f"[데이터 로드 실패] {e}"
+            old_xp = user.get(
+                "xp",
+                0
             )
 
-    return {
-        "users": {},
-        "blacklisted_channels": []
-    }
+            old_level = user.get(
+                "level",
+                1
+            )
+
+            user["chat_xp"] = old_xp
+            user["chat_level"] = old_level
+
+            user["chat_total_xp"] = (
+                get_total_xp_for_level(old_level)
+                + old_xp
+            )
+
+            user["voice_xp"] = 0
+            user["voice_level"] = 1
+            user["voice_total_xp"] = 0
+
+            user.pop(
+                "xp",
+                None
+            )
+
+            user.pop(
+                "level",
+                None
+            )
 
 
-def save_data(data):
+        # ------------------------------------------
+        # 누락된 값 방지
+        # ------------------------------------------
 
-    with open(
-        DATA_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
+        user.setdefault(
+            "chat_xp",
+            0
+        )
 
-        json.dump(
-            data,
-            f,
-            indent=4,
-            ensure_ascii=False
+        user.setdefault(
+            "chat_level",
+            1
+        )
+
+        user.setdefault(
+            "chat_total_xp",
+            0
+        )
+
+        user.setdefault(
+            "voice_xp",
+            0
+        )
+
+        user.setdefault(
+            "voice_level",
+            1
+        )
+
+        user.setdefault(
+            "voice_total_xp",
+            0
         )
 
 
+    return data
+
+
 # ==================================================
-# 4. XP 계산
+# 4. 데이터 저장
+# ==================================================
+
+def save_data(data):
+
+    try:
+
+        with open(
+            DATA_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                data,
+                f,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    except Exception as e:
+
+        print(f"[데이터 저장 오류] {e}")
+
+
+# ==================================================
+# 5. XP 계산
 # ==================================================
 
 def get_required_xp(level):
 
-    return (level ** 2) * 100
+    return (
+        level ** 2
+    ) * 100
 
 
 def get_total_xp_for_level(level):
 
     total = 0
 
-    for lvl in range(1, level):
+    for lvl in range(
+        1,
+        level
+    ):
 
-        total += get_required_xp(lvl)
+        total += get_required_xp(
+            lvl
+        )
 
     return total
 
 
 # ==================================================
-# 5. 유저 데이터
+# 6. 유저 데이터 가져오기
 # ==================================================
 
 def get_user_data(user_id):
 
     data = load_data()
 
-    user_str = str(user_id)
+    user_id = str(
+        user_id
+    )
 
-    if user_str not in data["users"]:
 
-        data["users"][user_str] = {
+    if user_id not in data["users"]:
+
+        data["users"][user_id] = {
 
             "chat_xp": 0,
             "chat_level": 1,
@@ -251,13 +278,15 @@ def get_user_data(user_id):
 
         save_data(data)
 
-    user = data["users"][user_str]
 
-    return data, user
+    return (
+        data,
+        data["users"][user_id]
+    )
 
 
 # ==================================================
-# 6. XP 추가
+# 7. 채팅 XP 추가
 # ==================================================
 
 def add_chat_xp(
@@ -269,13 +298,13 @@ def add_chat_xp(
         user_id
     )
 
-    old_level = user["chat_level"]
 
     user["chat_xp"] += amount
+
     user["chat_total_xp"] += amount
 
-    level_ups = 0
 
+    # 레벨업
     while user["chat_xp"] >= get_required_xp(
         user["chat_level"]
     ):
@@ -286,16 +315,13 @@ def add_chat_xp(
 
         user["chat_level"] += 1
 
-        level_ups += 1
 
     save_data(data)
 
-    return (
-        old_level,
-        user["chat_level"],
-        level_ups
-    )
 
+# ==================================================
+# 8. 음성 XP 추가
+# ==================================================
 
 def add_voice_xp(
     user_id,
@@ -306,13 +332,13 @@ def add_voice_xp(
         user_id
     )
 
-    old_level = user["voice_level"]
 
     user["voice_xp"] += amount
+
     user["voice_total_xp"] += amount
 
-    level_ups = 0
 
+    # 레벨업
     while user["voice_xp"] >= get_required_xp(
         user["voice_level"]
     ):
@@ -323,22 +349,17 @@ def add_voice_xp(
 
         user["voice_level"] += 1
 
-        level_ups += 1
 
     save_data(data)
 
-    return (
-        old_level,
-        user["voice_level"],
-        level_ups
-    )
-
 
 # ==================================================
-# 7. 순위
+# 9. 순위 계산
 # ==================================================
 
-def get_rankings(category):
+def get_rankings(
+    category
+):
 
     data = load_data()
 
@@ -347,35 +368,35 @@ def get_rankings(category):
         {}
     )
 
+
     if category == "chat":
 
         return sorted(
             users.items(),
-            key=lambda item:
-            item[1].get(
+            key=lambda item: item[1].get(
                 "chat_total_xp",
                 0
             ),
             reverse=True
         )
 
+
     if category == "voice":
 
         return sorted(
             users.items(),
-            key=lambda item:
-            item[1].get(
+            key=lambda item: item[1].get(
                 "voice_total_xp",
                 0
             ),
             reverse=True
         )
 
+
     # 총합
     return sorted(
         users.items(),
-        key=lambda item:
-        (
+        key=lambda item: (
             item[1].get(
                 "chat_total_xp",
                 0
@@ -390,6 +411,10 @@ def get_rankings(category):
     )
 
 
+# ==================================================
+# 10. 유저 순위
+# ==================================================
+
 def get_user_rank(
     user_id,
     category
@@ -399,36 +424,303 @@ def get_user_rank(
         category
     )
 
-    user_id = str(user_id)
+    user_id = str(
+        user_id
+    )
 
-    for index, (uid, user) in enumerate(
+
+    for index, (
+        uid,
+        user
+    ) in enumerate(
         rankings,
         start=1
     ):
 
         if uid == user_id:
+
             return index
+
 
     return None
 
 
 # ==================================================
-# 8. 봇 시작
+# 11. XP 진행바
+# ==================================================
+
+def make_progress_bar(
+    current,
+    maximum,
+    length=15
+):
+
+    if maximum <= 0:
+
+        return "□□□□□□□□□□□□□□□"
+
+
+    ratio = current / maximum
+
+    ratio = max(
+        0,
+        min(
+            ratio,
+            1
+        )
+    )
+
+
+    filled = int(
+        ratio * length
+    )
+
+    empty = length - filled
+
+
+    return (
+        "█" * filled
+        +
+        "░" * empty
+    )
+
+
+# ==================================================
+# 12. 유저 이름 가져오기
+# ==================================================
+
+async def get_member_name(
+    guild,
+    user_id
+):
+
+    member = guild.get_member(
+        int(user_id)
+    )
+
+
+    if member:
+
+        return member.display_name
+
+
+    try:
+
+        user = await bot.fetch_user(
+            int(user_id)
+        )
+
+        return user.name
+
+    except Exception:
+
+        return f"알 수 없는 유저 ({user_id})"
+
+
+# ==================================================
+# 13. 랭크 메시지 생성
+# ==================================================
+
+def create_rank_embed(
+    target_user,
+    user_data
+):
+
+    chat_level = user_data.get(
+        "chat_level",
+        1
+    )
+
+    chat_xp = user_data.get(
+        "chat_xp",
+        0
+    )
+
+    chat_total_xp = user_data.get(
+        "chat_total_xp",
+        0
+    )
+
+
+    voice_level = user_data.get(
+        "voice_level",
+        1
+    )
+
+    voice_xp = user_data.get(
+        "voice_xp",
+        0
+    )
+
+    voice_total_xp = user_data.get(
+        "voice_total_xp",
+        0
+    )
+
+
+    chat_required = get_required_xp(
+        chat_level
+    )
+
+    voice_required = get_required_xp(
+        voice_level
+    )
+
+
+    total_xp = (
+        chat_total_xp
+        +
+        voice_total_xp
+    )
+
+
+    embed = discord.Embed(
+        title="🏆 랭크",
+        description=(
+            f"## {target_user.display_name}\n"
+            f"총 XP **{total_xp:,} XP**"
+        ),
+        color=discord.Color.blurple()
+    )
+
+
+    # ----------------------------------------------
+    # 채팅
+    # ----------------------------------------------
+
+    chat_bar = make_progress_bar(
+        chat_xp,
+        chat_required
+    )
+
+    chat_rank = get_user_rank(
+        target_user.id,
+        "chat"
+    )
+
+
+    embed.add_field(
+        name="💬 채팅",
+        value=(
+            f"레벨 **{chat_level}**\n"
+            f"`{chat_bar}`\n"
+            f"**{chat_xp:,} / {chat_required:,} XP**\n"
+            f"전체 순위 **{chat_rank or '-'}위**\n"
+            f"총 획득 XP **{chat_total_xp:,}**"
+        ),
+        inline=False
+    )
+
+
+    # ----------------------------------------------
+    # 음성
+    # ----------------------------------------------
+
+    voice_bar = make_progress_bar(
+        voice_xp,
+        voice_required
+    )
+
+    voice_rank = get_user_rank(
+        target_user.id,
+        "voice"
+    )
+
+
+    embed.add_field(
+        name="🎧 음성",
+        value=(
+            f"레벨 **{voice_level}**\n"
+            f"`{voice_bar}`\n"
+            f"**{voice_xp:,} / {voice_required:,} XP**\n"
+            f"전체 순위 **{voice_rank or '-'}위**\n"
+            f"총 획득 XP **{voice_total_xp:,}**"
+        ),
+        inline=False
+    )
+
+
+    # ----------------------------------------------
+    # 총합 순위
+    # ----------------------------------------------
+
+    total_rank = get_user_rank(
+        target_user.id,
+        "total"
+    )
+
+
+    embed.add_field(
+        name="🏅 총합",
+        value=(
+            f"총 XP **{total_xp:,}**\n"
+            f"총합 순위 **{total_rank or '-'}위**"
+        ),
+        inline=False
+    )
+
+
+    embed.set_thumbnail(
+        url=target_user.display_avatar.url
+    )
+
+
+    embed.set_footer(
+        text="채팅 XP: 1분마다 최대 1회 • 음성 XP: 2분마다"
+    )
+
+
+    return embed
+
+
+# ==================================================
+# 14. 랭크 보내기
+# ==================================================
+
+async def send_rank(
+    interaction_or_channel,
+    target_user
+):
+
+    data, user_data = get_user_data(
+        target_user.id
+    )
+
+
+    embed = create_rank_embed(
+        target_user,
+        user_data
+    )
+
+
+    if isinstance(
+        interaction_or_channel,
+        discord.Interaction
+    ):
+
+        await interaction_or_channel.response.send_message(
+            embed=embed
+        )
+
+    else:
+
+        await interaction_or_channel.send(
+            embed=embed
+        )
+
+
+# ==================================================
+# 15. 봇 준비
 # ==================================================
 
 @bot.event
 async def on_ready():
 
     print(
-        f"로그인 성공: "
-        f"{bot.user.name} "
+        f"로그인 성공: {bot.user} "
         f"(ID: {bot.user.id})"
     )
 
-    print(
-        f"연결된 서버: "
-        f"{len(bot.guilds)}개"
-    )
 
     try:
 
@@ -442,10 +734,11 @@ async def on_ready():
     except Exception as e:
 
         print(
-            f"슬래시 명령어 동기화 실패: {e}"
+            f"[슬래시 명령어 동기화 오류] {e}"
         )
 
-    # 음성 XP 중복 실행 방지
+
+    # 음성 XP 루프 중복 실행 방지
     if not hasattr(
         bot,
         "voice_task_started"
@@ -459,22 +752,22 @@ async def on_ready():
 
 
 # ==================================================
-# 9. /제외채널
+# 16. /제외채널
 # ==================================================
 
 @bot.tree.command(
     name="제외채널",
-    description="경험치가 오르지 않을 채널을 추가하거나 제거합니다."
+    description="경험치를 막거나 다시 허용할 채널을 설정합니다."
 )
 @app_commands.describe(
-    channel="경험치를 막거나 해제할 채널"
+    channel="제외할 채널"
 )
 async def exclude_channel(
     interaction: discord.Interaction,
     channel: discord.abc.GuildChannel
 ):
 
-    # 관리자만 사용
+    # 서버 관리자만 사용
     if not interaction.user.guild_permissions.manage_guild:
 
         await interaction.response.send_message(
@@ -484,6 +777,7 @@ async def exclude_channel(
 
         return
 
+
     data = load_data()
 
     blacklisted = data.get(
@@ -491,20 +785,16 @@ async def exclude_channel(
         []
     )
 
+
     if channel.id in blacklisted:
 
         blacklisted.remove(
             channel.id
         )
 
-        data["blacklisted_channels"] = blacklisted
-
-        save_data(data)
-
-        await interaction.response.send_message(
-            f"✅ {channel.mention} 채널이 "
-            f"제외 목록에서 삭제되었습니다.",
-            ephemeral=True
+        message = (
+            f"✅ {channel.mention} "
+            "채널의 XP 제한을 해제했습니다."
         )
 
     else:
@@ -513,202 +803,25 @@ async def exclude_channel(
             channel.id
         )
 
-        data["blacklisted_channels"] = blacklisted
-
-        save_data(data)
-
-        await interaction.response.send_message(
-            f"🚫 {channel.mention} 채널이 "
-            f"제외 목록에 추가되었습니다.",
-            ephemeral=True
+        message = (
+            f"🚫 {channel.mention} "
+            "채널에서 XP가 오르지 않도록 설정했습니다."
         )
+
+
+    data["blacklisted_channels"] = blacklisted
+
+    save_data(data)
+
+
+    await interaction.response.send_message(
+        message,
+        ephemeral=True
+    )
 
 
 # ==================================================
-# 10. 랭크 카드
-# ==================================================
-
-async def send_rank_card(
-    interaction_or_channel,
-    target_user
-):
-
-    data, user = get_user_data(
-        target_user.id
-    )
-
-    chat_level = user.get(
-        "chat_level",
-        1
-    )
-
-    chat_xp = user.get(
-        "chat_xp",
-        0
-    )
-
-    chat_total_xp = user.get(
-        "chat_total_xp",
-        0
-    )
-
-    voice_level = user.get(
-        "voice_level",
-        1
-    )
-
-    voice_xp = user.get(
-        "voice_xp",
-        0
-    )
-
-    voice_total_xp = user.get(
-        "voice_total_xp",
-        0
-    )
-
-    chat_max_xp = get_required_xp(
-        chat_level
-    )
-
-    voice_max_xp = get_required_xp(
-        voice_level
-    )
-
-    chat_rank = get_user_rank(
-        target_user.id,
-        "chat"
-    )
-
-    voice_rank = get_user_rank(
-        target_user.id,
-        "voice"
-    )
-
-    total_rank = get_user_rank(
-        target_user.id,
-        "total"
-    )
-
-    # ----------------------------------------------
-    # 아바타 임시 파일
-    # ----------------------------------------------
-
-    avatar_path = (
-        f"avatar_{target_user.id}.png"
-    )
-
-    try:
-
-        await target_user.display_avatar.save(
-            avatar_path
-        )
-
-        # ------------------------------------------
-        # 기존 rank_card.py 방식에 맞춰 호출
-        # ------------------------------------------
-
-        image_path = create_rank_card(
-
-            username=target_user.display_name,
-
-            chat_level=chat_level,
-            chat_xp=chat_xp,
-            chat_max_xp=chat_max_xp,
-            chat_total_xp=chat_total_xp,
-
-            voice_level=voice_level,
-            voice_xp=voice_xp,
-            voice_max_xp=voice_max_xp,
-            voice_total_xp=voice_total_xp,
-
-            chat_rank=chat_rank,
-            voice_rank=voice_rank,
-            total_rank=total_rank,
-
-            avatar_path=avatar_path
-        )
-
-        file = discord.File(
-            image_path,
-            filename="rank.png"
-        )
-
-        if isinstance(
-            interaction_or_channel,
-            discord.Interaction
-        ):
-
-            await interaction_or_channel.response.send_message(
-                file=file
-            )
-
-        else:
-
-            await interaction_or_channel.send(
-                file=file
-            )
-
-    except Exception as e:
-
-        print(
-            f"[랭크 카드 오류] {e}"
-        )
-
-        error_message = (
-            "❌ 랭크 카드를 만드는 중 오류가 발생했습니다."
-        )
-
-        if isinstance(
-            interaction_or_channel,
-            discord.Interaction
-        ):
-
-            if interaction_or_channel.response.is_done():
-
-                await interaction_or_channel.followup.send(
-                    error_message
-                )
-
-            else:
-
-                await interaction_or_channel.response.send_message(
-                    error_message
-                )
-
-        else:
-
-            await interaction_or_channel.send(
-                error_message
-            )
-
-    finally:
-
-        if os.path.exists(
-            avatar_path
-        ):
-
-            try:
-                os.remove(
-                    avatar_path
-                )
-            except Exception:
-                pass
-
-        if os.path.exists(
-            "rank_card.png"
-        ):
-
-            try:
-                os.remove(
-                    "rank_card.png"
-                )
-            except Exception:
-                pass
-
-
-# ==================================================
-# 11. /랭크
+# 17. /랭크
 # ==================================================
 
 @bot.tree.command(
@@ -728,14 +841,15 @@ async def rank_slash(
         or interaction.user
     )
 
-    await send_rank_card(
+
+    await send_rank(
         interaction,
         target
     )
 
 
 # ==================================================
-# 12. /rank
+# 18. /rank
 # ==================================================
 
 @bot.tree.command(
@@ -755,14 +869,15 @@ async def rank_slash_english(
         or interaction.user
     )
 
-    await send_rank_card(
+
+    await send_rank(
         interaction,
         target
     )
 
 
 # ==================================================
-# 13. 랭킹 메시지
+# 19. 순위 보내기
 # ==================================================
 
 async def send_rankings(
@@ -773,6 +888,7 @@ async def send_rankings(
     rankings = get_rankings(
         category
     )
+
 
     if category == "chat":
 
@@ -786,10 +902,12 @@ async def send_rankings(
 
         title = "🏆 총합 XP 순위"
 
+
     embed = discord.Embed(
         title=title,
         color=discord.Color.blurple()
     )
+
 
     if not rankings:
 
@@ -801,6 +919,7 @@ async def send_rankings(
 
         lines = []
 
+
         for index, (
             user_id,
             user_data
@@ -809,27 +928,11 @@ async def send_rankings(
             start=1
         ):
 
-            try:
+            name = await get_member_name(
+                interaction_or_channel.guild,
+                user_id
+            )
 
-                guild = (
-                    interaction_or_channel.guild
-                )
-
-                member = guild.get_member(
-                    int(user_id)
-                )
-
-                name = (
-                    member.display_name
-                    if member
-                    else f"알 수 없는 유저 ({user_id})"
-                )
-
-            except Exception:
-
-                name = (
-                    f"알 수 없는 유저 ({user_id})"
-                )
 
             chat_total = user_data.get(
                 "chat_total_xp",
@@ -841,10 +944,6 @@ async def send_rankings(
                 0
             )
 
-            total = (
-                chat_total
-                + voice_total
-            )
 
             if category == "chat":
 
@@ -856,16 +955,39 @@ async def send_rankings(
 
             else:
 
-                xp = total
+                xp = (
+                    chat_total
+                    +
+                    voice_total
+                )
+
+
+            if index == 1:
+
+                medal = "🥇"
+
+            elif index == 2:
+
+                medal = "🥈"
+
+            elif index == 3:
+
+                medal = "🥉"
+
+            else:
+
+                medal = f"`{index}위`"
+
 
             lines.append(
-                f"**{index}위**  "
-                f"{name} — `{xp:,} XP`"
+                f"{medal} **{name}** — `{xp:,} XP`"
             )
 
-        embed.description = "\n".join(
-            lines
+
+        embed.description = (
+            "\n".join(lines)
         )
+
 
     if isinstance(
         interaction_or_channel,
@@ -884,7 +1006,7 @@ async def send_rankings(
 
 
 # ==================================================
-# 14. /랭크순위
+# 20. /랭크순위
 # ==================================================
 
 @app_commands.choices(
@@ -919,7 +1041,7 @@ async def ranking_slash(
 
 
 # ==================================================
-# 15. /ranklist
+# 21. /ranklist
 # ==================================================
 
 @app_commands.choices(
@@ -954,14 +1076,20 @@ async def ranking_slash_english(
 
 
 # ==================================================
-# 16. 메시지 XP + 기존 커스텀 명령어
+# 22. 메시지 처리
 # ==================================================
 
 @bot.event
 async def on_message(message):
 
+    # 봇 무시
     if message.author.bot:
         return
+
+
+    # ----------------------------------------------
+    # 제외 채널
+    # ----------------------------------------------
 
     data = load_data()
 
@@ -970,17 +1098,12 @@ async def on_message(message):
         []
     )
 
-    # ----------------------------------------------
-    # 제외 채널
-    # ----------------------------------------------
 
-    if message.channel.id in blacklisted_channels:
+    is_blacklisted = (
+        message.channel.id
+        in blacklisted_channels
+    )
 
-        await bot.process_commands(
-            message
-        )
-
-        return
 
     # ----------------------------------------------
     # 기존 커스텀 명령어
@@ -991,6 +1114,7 @@ async def on_message(message):
         .replace(" ", "")
     )
 
+
     if clean_content == "!단미":
 
         await message.channel.send(
@@ -998,6 +1122,7 @@ async def on_message(message):
         )
 
         return
+
 
     elif clean_content == "!채채":
 
@@ -1007,6 +1132,7 @@ async def on_message(message):
 
         return
 
+
     elif clean_content == "!유솔":
 
         await message.channel.send(
@@ -1014,6 +1140,7 @@ async def on_message(message):
         )
 
         return
+
 
     elif clean_content == "!이루":
 
@@ -1023,6 +1150,7 @@ async def on_message(message):
 
         return
 
+
     elif clean_content == "!명온":
 
         await message.channel.send(
@@ -1030,6 +1158,7 @@ async def on_message(message):
         )
 
         return
+
 
     elif clean_content == "!걸틱":
 
@@ -1039,6 +1168,7 @@ async def on_message(message):
 
         return
 
+
     elif clean_content == "!이븐":
 
         await message.channel.send(
@@ -1047,16 +1177,18 @@ async def on_message(message):
 
         return
 
+
     elif clean_content == "!이스터에그":
 
         await message.channel.send(
-            "쓸대없는 tmi지만 이 봇은 두 번째 희망 봇 이에요. 전에 시도하다가 망했거든 ㅎ"
+            "쓸대없는 tmi지만 이 봇은 두 번째 희망 봇 이에요. 전에 시도하다가 망했거든요 ㅎ"
         )
 
         return
 
+
     # ----------------------------------------------
-    # !랭크 / !rank
+    # !랭크
     # ----------------------------------------------
 
     cmd_text = (
@@ -1066,25 +1198,26 @@ async def on_message(message):
         .replace(" ", "")
     )
 
+
     if cmd_text in [
         "!랭크",
         "!rank"
     ]:
 
         print(
-            f"[{message.author.name}] "
-            f"랭크 카드 요청"
+            f"[{message.author.name}] 랭크 요청"
         )
 
-        await send_rank_card(
+        await send_rank(
             message.channel,
             message.author
         )
 
         return
 
+
     # ----------------------------------------------
-    # !순위 / !ranklist
+    # !순위
     # ----------------------------------------------
 
     if cmd_text in [
@@ -1099,6 +1232,20 @@ async def on_message(message):
 
         return
 
+
+    # ----------------------------------------------
+    # 제외 채널이면 XP만 차단
+    # ----------------------------------------------
+
+    if is_blacklisted:
+
+        await bot.process_commands(
+            message
+        )
+
+        return
+
+
     # ----------------------------------------------
     # 채팅 XP
     # ----------------------------------------------
@@ -1107,25 +1254,20 @@ async def on_message(message):
 
     now = asyncio.get_event_loop().time()
 
+
     if (
         user_id not in chat_cooldowns
         or
-        now - chat_cooldowns[user_id] > 60
+        now - chat_cooldowns[user_id] >= 60
     ):
 
         chat_cooldowns[user_id] = now
 
-        old_level, new_level, level_ups = add_chat_xp(
+        add_chat_xp(
             user_id,
             5
         )
 
-        if level_ups > 0:
-
-            await message.channel.send(
-                f"🎉 {message.author.mention} "
-                f"채팅 레벨이 **{new_level}**이 되었습니다!"
-            )
 
     await bot.process_commands(
         message
@@ -1133,18 +1275,21 @@ async def on_message(message):
 
 
 # ==================================================
-# 17. 음성 XP
+# 23. 음성 XP
 # ==================================================
 
 async def voice_xp_loop():
 
     await bot.wait_until_ready()
 
+
     while not bot.is_closed():
 
+        # 2분마다
         await asyncio.sleep(
             120
         )
+
 
         data = load_data()
 
@@ -1153,17 +1298,24 @@ async def voice_xp_loop():
             []
         )
 
+
         for guild in bot.guilds:
 
-            for vc in guild.voice_channels:
+            for voice_channel in guild.voice_channels:
 
-                if vc.id in blacklisted_channels:
+                # 제외된 음성 채널
+                if voice_channel.id in blacklisted_channels:
+
                     continue
 
-                for member in vc.members:
 
+                for member in voice_channel.members:
+
+                    # 봇 제외
                     if member.bot:
+
                         continue
+
 
                     add_voice_xp(
                         member.id,
@@ -1172,12 +1324,13 @@ async def voice_xp_loop():
 
 
 # ==================================================
-# 18. 봇 실행
+# 24. 봇 실행
 # ==================================================
 
 token = os.environ.get(
     "BOT_TOKEN"
 )
+
 
 if not token:
 
@@ -1186,4 +1339,6 @@ if not token:
     )
 
 
-bot.run(token)
+bot.run(
+    token
+)
