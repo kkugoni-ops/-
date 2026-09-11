@@ -1,5 +1,5 @@
 import io
-from easy_pil import Editor, Canvas, Font, LoadImage
+from easy_pil import Editor, Canvas, Font, load_image
 
 
 async def create_rank_card(
@@ -9,8 +9,8 @@ async def create_rank_card(
     background = Canvas((500, 150), color="#23272A")
     editor = Editor(background)
 
-    # 2. 유저 아바타 불러오기 및 동그랗게 잘라내기
-    profile_image = await LoadImage().async_open(avatar_url)
+    # 2. 유저 아바타 불러오기 및 동그랗게 잘라내기 (load_image 소문자 사용)
+    profile_image = await load_image(avatar_url)
     profile = Editor(profile_image).resize((100, 100)).circle_image()
     editor.paste(profile, (25, 25))
 
@@ -18,7 +18,7 @@ async def create_rank_card(
     font_large = Font.poppins(size=22, variant="bold")
     font_small = Font.poppins(size=13, variant="regular")
 
-    # 4. 텍스트 표시 (스타일 1: 총 누적 XP 함께 표시)
+    # 4. 텍스트 표시
     editor.text((140, 28), str(username), font=font_large, color="#FFFFFF")
     editor.text(
         (140, 60),
