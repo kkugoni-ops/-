@@ -151,17 +151,13 @@ async def on_message(message):
     clean_content = message.content.replace(" ", "")
 
     if clean_content == "!단미":
-        await message.channel.send(
-            "한번만 더 건들이면 내가 누군지 똑똑히 알려주겠어"
-        )
+        await message.channel.send("한번만 더 건들이면 내가 누군지 똑똑히 알려주겠어")
         return
     elif clean_content == "!채채":
         await message.channel.send('" 채채는 똑똑이야 "')
         return
     elif clean_content == "!유솔":
-        await message.channel.send(
-            "없어졌다 나타났다 다시 없어질게요 아니 다시 나타날게요"
-        )
+        await message.channel.send("없어졌다 나타났다 다시 없어질게요 아니 다시 나타날게요")
         return
     elif clean_content == "!이루":
         await message.channel.send(
@@ -175,9 +171,7 @@ async def on_message(message):
         await message.channel.send("왜요?")
         return
     elif clean_content == "!이븐":
-        await message.channel.send(
-            "전 포도주스로 따지면 고농축 엑기스같은 존재죠"
-        )
+        await message.channel.send("전 포도주스로 따지면 고농축 엑기스같은 존재죠")
         return
     elif clean_content == "!이스터에그":
         await message.channel.send(
@@ -185,43 +179,49 @@ async def on_message(message):
         )
         return
 
-    # 랭크 카드 출력 명령어
-    if message.content == "!랭크" or message.content == "!rank":
-        data = load_data()
+    # 제외 채널 검사
+    data = load_data()
+    blacklisted_channels = data.get("blacklisted_channels", [])
+
+    if message.channel.id in blacklisted_channels:
+        return  # 제외 채널이면 경험치 적립 및 랭크 카드 생성 모두 차단
+
+    # 채팅 경험치 적립 (1분 쿨다운, 1회당 5 XP)
+    user_id = message.author.id
+    now = asyncio.get_event_loop().time()
+
+    if user_id not in cooldowns or now - cooldowns[user_id] > 60:
+        cooldowns[user_id] = now
+        add_xp(user_id, 5)
+
+    # !랭크 카드 감지 (대소문자/공백 유연하게 처리)
+    cmd_text = message.content.strip().lower().replace(" ", "")
+    if cmd_text in ["!랭크", "!rank"]:
+        print(f"[{message.author.name}] 랭크 카드 생성 시작...")
         users_data = data.get("users", {})
-        user_info = users_data.get(
-            str(message.author.id), {"xp": 0, "level": 1}
-        )
+        user_info = users_data.get(str(message.author.id), {"xp": 0, "level": 1})
         lvl = user_info["level"]
         xp = user_info["xp"]
         max_xp = get_required_xp(lvl)
 
         total_xp = get_total_xp_for_level(lvl) + xp
 
-        img_buffer = await create_rank_card(
-            username=message.author.name,
-            avatar_url=message.author.display_avatar.url,
-            level=lvl,
-            current_xp=xp,
-            max_xp=max_xp,
-            total_xp=total_xp,
-        )
-        await message.channel.send(
-            file=discord.File(fp=img_buffer, filename="rank.png")
-        )
+        try:
+            img_buffer = await create_rank_card(
+                username=message.author.name,
+                avatar_url=message.author.display_avatar.url,
+                level=lvl,
+                current_xp=xp,
+                max_xp=max_xp,
+                total_xp=total_xp,
+            )
+            await message.channel.send(
+                file=discord.File(fp=img_buffer, filename="rank.png")
+            )
+            print(f"[{message.author.name}] 랭크 카드 전송 성공!")
+        except Exception as e:
+            print(f"랭크 카드 생성/전송 중 오류 발생: {e}")
         return
-
-    # 제외 채널 체크 및 채팅 경험치 지급 (1분 쿨다운, 1회당 5 XP)
-    data = load_data()
-    blacklisted_channels = data.get("blacklisted_channels", [])
-
-    if message.channel.id not in blacklisted_channels:
-        user_id = message.author.id
-        now = asyncio.get_event_loop().time()
-
-        if user_id not in cooldowns or now - cooldowns[user_id] > 60:
-            cooldowns[user_id] = now
-            add_xp(user_id, 5)
 
     await bot.process_commands(message)
 
