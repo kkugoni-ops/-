@@ -64,3 +64,5 @@ async def create_rank_card(
     buffer = io.BytesIO(file_bytes)
     buffer.seek(0)
     return buffer
+
+
