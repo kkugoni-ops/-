@@ -9,8 +9,8 @@ async def create_rank_card(
     background = Canvas((500, 150), color="#23272A")
     editor = Editor(background)
 
-    # 2. 유저 아바타 불러오기 및 동그랗게 잘라내기 (load_image 소문자 사용)
-    profile_image = await load_image(avatar_url)
+    # 2. 유저 아바타 불러오기 및 동그랗게 잘라내기 (await 제거)
+    profile_image = load_image(avatar_url)
     profile = Editor(profile_image).resize((100, 100)).circle_image()
     editor.paste(profile, (25, 25))
 
