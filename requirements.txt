@@ -1,4 +1,2 @@
 discord.py
-easy-pil
 Pillow
-aiohttp
