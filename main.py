@@ -1,4 +1,18 @@
 import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+# Render 무료 플랜 포트 감지용 가짜 서버
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), lambda *args: BaseHTTPRequestHandler(*args))
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+
+
+import os
 import discord
 from discord.ext import commands
 
