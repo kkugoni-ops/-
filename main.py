@@ -186,11 +186,137 @@ def load_data():
             1
         )
 
+# ==================================================
+# 3. 데이터 불러오기
+# ==================================================
+
+def load_data():
+
+    # levels.json이 아예 없을 때만 새로 생성
+    if not os.path.exists(DATA_FILE):
+
+        data = {
+            "users": {},
+            "blacklisted_channels": []
+        }
+
+        save_data(data)
+
+        return data
+
+    try:
+
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+    except json.JSONDecodeError as e:
+
+        # 중요:
+        # 기존 파일을 읽지 못했다고 빈 데이터로 덮어쓰지 않음
+        print(
+            f"[치명적 데이터 오류] levels.json을 읽을 수 없습니다: {e}"
+        )
+
+        raise RuntimeError(
+            "levels.json이 손상되었습니다. "
+            "XP 데이터를 보호하기 위해 봇을 종료합니다."
+        )
+
+    except Exception as e:
+
+        print(
+            f"[데이터 로드 오류] {e}"
+        )
+
+        raise
+
+    # 기본 구조가 없으면 추가
+    data.setdefault(
+        "users",
+        {}
+    )
+
+    data.setdefault(
+        "blacklisted_channels",
+        []
+    )
+
+    # 기존 데이터 자동 변환
+    for user_id, user in data["users"].items():
+
+        if "chat_xp" not in user:
+
+            old_xp = user.get(
+                "xp",
+                0
+            )
+
+            old_level = user.get(
+                "level",
+                1
+            )
+
+            user["chat_xp"] = old_xp
+
+            user["chat_level"] = old_level
+
+            user["chat_total_xp"] = (
+                get_total_xp_for_level(
+                    old_level
+                )
+                + old_xp
+            )
+
+            user["voice_xp"] = 0
+
+            user["voice_level"] = 1
+
+            user["voice_total_xp"] = 0
+
+            user.pop(
+                "xp",
+                None
+            )
+
+            user.pop(
+                "level",
+                None
+            )
+
+        user.setdefault(
+            "chat_xp",
+            0
+        )
+
+        user.setdefault(
+            "chat_level",
+            1
+        )
+
+        user.setdefault(
+            "chat_total_xp",
+            0
+        )
+
+        user.setdefault(
+            "voice_xp",
+            0
+        )
+
+        user.setdefault(
+            "voice_level",
+            1
+        )
+
         user.setdefault(
             "voice_total_xp",
             0
         )
-
 
     return data
 
@@ -201,10 +327,13 @@ def load_data():
 
 def save_data(data):
 
+    temp_file = DATA_FILE + ".tmp"
+
     try:
 
+        # 먼저 임시 파일에 저장
         with open(
-            DATA_FILE,
+            temp_file,
             "w",
             encoding="utf-8"
         ) as f:
@@ -216,12 +345,36 @@ def save_data(data):
                 ensure_ascii=False
             )
 
+            f.flush()
+
+            os.fsync(
+                f.fileno()
+            )
+
+        # 정상적으로 저장된 경우에만
+        # 실제 levels.json으로 교체
+        os.replace(
+            temp_file,
+            DATA_FILE
+        )
+
     except Exception as e:
 
         print(
             f"[데이터 저장 오류] {e}"
         )
 
+        # 임시 파일이 남아 있으면 삭제
+        if os.path.exists(temp_file):
+
+            try:
+
+                os.remove(
+                    temp_file
+                )
+
+            except Exception:
+                pass
 
 # ==================================================
 # 5. XP 계산
