@@ -1272,7 +1272,7 @@ async def on_message(message):
 
         return
 
-    elif clean_content == "!카이":
+    elif clean_content == "!아카이":
 
         await message.channel.send(
             "아카이는 말로 형용할 수 없을만큼 완벽해"
