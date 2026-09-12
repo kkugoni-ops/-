@@ -1264,7 +1264,7 @@ async def on_message(message):
 
         return
 
-        elif clean_content == "!소혜":
+    elif clean_content == "!소혜":
 
         await message.channel.send(
             "이뿌니곤듀 😍🫶🏻"
