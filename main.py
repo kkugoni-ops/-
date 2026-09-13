@@ -780,26 +780,33 @@ async def send_rank(
 async def on_ready():
 
     print(
-        f"로그인 성공: {bot.user} "
+        f"✅ 로그인 성공: {bot.user} "
         f"(ID: {bot.user.id})"
     )
 
+    print(
+        f"🌐 연결된 서버 수: {len(bot.guilds)}"
+    )
+
+    for guild in bot.guilds:
+        print(
+            f"   - {guild.name} ({guild.id})"
+        )
 
     try:
 
         synced = await bot.tree.sync()
 
         print(
-            f"슬래시 명령어 "
+            f"✅ 슬래시 명령어 "
             f"{len(synced)}개 동기화 완료"
         )
 
     except Exception as e:
 
         print(
-            f"[슬래시 명령어 동기화 오류] {e}"
+            f"❌ 슬래시 명령어 동기화 오류: {e}"
         )
-
 
     if not hasattr(
         bot,
@@ -812,6 +819,25 @@ async def on_ready():
             voice_xp_loop()
         )
 
+        print(
+            "🎧 음성 XP 시스템 시작"
+        )
+
+
+@bot.event
+async def on_disconnect():
+
+    print(
+        "⚠️ Discord 연결이 끊어졌습니다."
+    )
+
+
+@bot.event
+async def on_resumed():
+
+    print(
+        "🔄 Discord 연결이 다시 복구되었습니다."
+    )
 
 # ==================================================
 # 14. /제외채널
