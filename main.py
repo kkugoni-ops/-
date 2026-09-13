@@ -779,6 +779,8 @@ async def send_rank(
 @bot.event
 async def on_ready():
 
+    print("🔥 ON_READY 실행됨", flush=True)
+     
     print(
         f"✅ 로그인 성공: {bot.user} "
         f"(ID: {bot.user.id})"
